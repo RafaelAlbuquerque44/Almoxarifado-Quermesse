@@ -1,81 +1,70 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import { collection, onSnapshot, addDoc, doc, updateDoc, getDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 import { ArrowRightLeft, Download } from 'lucide-react';
 import QrCodeScanner from '../components/QrCodeScanner';
 
 export default function Movimentacoes() {
   const [movimentacoes, setMovimentacoes] = useState<any[]>([]);
   const [produtos, setProdutos] = useState<any[]>([]);
+  
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ produto_id: '', tipo: 'ENTRADA', quantidade: 1, responsavel: '', doador: '', isDoacao: false });
+  const [form, setForm] = useState({ produto_id: '', tipo: 'Saída', quantidade: 1, responsavel: '' });
   const [searchTerm, setSearchTerm] = useState('');
 
-  const fetchData = () => {
-    axios.get(`http://${window.location.hostname}:3001/api/movimentacoes`).then(res => setMovimentacoes(res.data)).catch(console.error);
-    axios.get(`http://${window.location.hostname}:3001/api/produtos`).then(res => setProdutos(res.data)).catch(console.error);
-  };
-
   useEffect(() => {
-    fetchData();
+    const unsubProds = onSnapshot(collection(db, 'produtos'), (snapshot) => {
+      setProdutos(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+    const unsubMovs = onSnapshot(collection(db, 'movimentacoes'), (snapshot) => {
+      setMovimentacoes(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+    return () => { unsubProds(); unsubMovs(); };
   }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    axios.post(`http://${window.location.hostname}:3001/api/movimentacoes`, form)
-      .then(() => {
-        fetchData();
-        setShowModal(false);
-        setForm({ produto_id: produtos[0]?.id || '', tipo: 'ENTRADA', quantidade: 1, responsavel: '', doador: '', isDoacao: false });
-      })
-      .catch(err => {
-        alert(err.response?.data?.error || 'Erro ao registrar movimentação');
+    try {
+      // Registrar movimentação
+      await addDoc(collection(db, 'movimentacoes'), {
+        ...form,
+        data_hora: new Date().toISOString()
       });
+
+      // Atualizar quantidade no produto
+      const prodRef = doc(db, 'produtos', form.produto_id);
+      const prodSnap = await getDoc(prodRef);
+      if (prodSnap.exists()) {
+        const prodData = prodSnap.data();
+        let novaQtd = prodData.quantidade || 0;
+        if (form.tipo === 'Entrada') novaQtd += form.quantidade;
+        if (form.tipo === 'Saída') novaQtd -= form.quantidade;
+        await updateDoc(prodRef, { quantidade: novaQtd });
+      }
+
+      setShowModal(false);
+      setForm({ produto_id: '', tipo: 'Saída', quantidade: 1, responsavel: '' });
+    } catch (err) {
+      console.error(err);
+    }
   };
 
-  const exportToCSV = () => {
-    const headers = ['ID', 'Data/Hora', 'Produto', 'Tipo', 'Quantidade', 'Responsável/Doador'];
-    const rows = movimentacoes.map(m => [
-      m.id,
-      new Date(m.data).toLocaleString('pt-BR'),
-      m.produto_nome,
-      m.tipo,
-      m.quantidade,
-      m.responsavel || m.doador || '-'
-    ]);
-
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(e => e.join(','))
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `movimentacoes_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const movsFiltradas = movimentacoes.filter(m => {
-    const term = searchTerm.toLowerCase();
-    const nomeProd = m.produto_nome ? m.produto_nome.toLowerCase() : '';
-    const resp = m.responsavel ? m.responsavel.toLowerCase() : '';
-    const doad = m.doador ? m.doador.toLowerCase() : '';
-    return nomeProd.includes(term) || resp.includes(term) || doad.includes(term);
-  });
+  const filtered = movimentacoes.filter(m => {
+    const prodName = produtos.find(p => p.id === m.produto_id)?.nome || '';
+    return prodName.toLowerCase().includes(searchTerm.toLowerCase()) || 
+           m.responsavel.toLowerCase().includes(searchTerm.toLowerCase());
+  }).sort((a, b) => new Date(b.data_hora).getTime() - new Date(a.data_hora).getTime());
 
   return (
-    <div>
+    <div className="main-content slide-up">
       <div className="page-header">
-        <h2 className="page-title">Histórico de Movimentações</h2>
+        <div>
+          <h2 className="page-title">Movimentações</h2>
+          <p style={{ color: 'var(--text-secondary)' }}>Registre entradas de doações e saídas para barracas</p>
+        </div>
         <div style={{ display: 'flex', gap: '1rem' }}>
-          <button className="btn" style={{ backgroundColor: 'var(--glass-bg)', color: 'white', border: '1px solid var(--glass-border)' }} onClick={exportToCSV}>
-            <Download size={18} /> Exportar CSV
-          </button>
           <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-            <ArrowRightLeft size={18} /> Registrar Movimentação
+            <ArrowRightLeft size={20} /> Nova Movimentação
           </button>
         </div>
       </div>
@@ -85,7 +74,7 @@ export default function Movimentacoes() {
         <input 
           type="text" 
           className="form-control" 
-          placeholder="Buscar por produto, responsável ou doador..." 
+          placeholder="Buscar por produto ou responsável..." 
           value={searchTerm} 
           onChange={e => setSearchTerm(e.target.value)}
           style={{ flex: 1 }}
@@ -96,36 +85,33 @@ export default function Movimentacoes() {
         <table>
           <thead>
             <tr>
-              <th>ID</th>
               <th>Data/Hora</th>
               <th>Produto</th>
               <th>Tipo</th>
-              <th>Quantidade</th>
-              <th>Responsável / Obs</th>
+              <th>Qtd</th>
+              <th>Responsável/Barraca</th>
             </tr>
           </thead>
           <tbody>
-            {movsFiltradas.map(m => (
-              <tr key={m.id}>
-                <td>{m.id}</td>
-                <td>{new Date(m.data).toLocaleString('pt-BR')}</td>
-                <td style={{ fontWeight: '600' }}>{m.produto_nome}</td>
-                <td>
-                  <span className={`badge ${m.tipo === 'ENTRADA' ? 'badge-entrada' : 'badge-saida'}`}>
-                    {m.tipo} {m.doador ? '(Doação)' : ''}
-                  </span>
-                </td>
-                <td style={{ fontWeight: 'bold' }}>{m.quantidade} un.</td>
-                <td style={{ color: 'var(--text-secondary)' }}>
-                  {m.tipo === 'SAIDA' ? m.responsavel : m.doador || '-'}
-                </td>
-              </tr>
-            ))}
-            {movsFiltradas.length === 0 && (
-              <tr>
-                <td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>Nenhuma movimentação encontrada.</td>
-              </tr>
-            )}
+            {filtered.map(m => {
+              const produto = produtos.find(p => p.id === m.produto_id);
+              return (
+                <tr key={m.id}>
+                  <td style={{ color: 'var(--text-secondary)' }}>{new Date(m.data_hora).toLocaleString()}</td>
+                  <td style={{ fontWeight: 500, color: 'white' }}>{produto ? produto.nome : 'Desconhecido'}</td>
+                  <td>
+                    <span className="badge" style={{ 
+                      backgroundColor: m.tipo === 'Entrada' ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                      color: m.tipo === 'Entrada' ? '#22c55e' : '#ef4444'
+                    }}>
+                      {m.tipo}
+                    </span>
+                  </td>
+                  <td style={{ fontWeight: 600 }}>{m.quantidade}</td>
+                  <td>{m.responsavel}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -133,78 +119,37 @@ export default function Movimentacoes() {
       {showModal && (
         <div className="modal-overlay">
           <div className="modal-content">
-            <h3 style={{ marginBottom: '1.5rem', fontSize: '1.5rem', fontWeight: '700' }}>Nova Movimentação</h3>
-            <form onSubmit={handleSubmit}>
-              <div className="form-group">
-                <label className="form-label">Produto</label>
-                <select 
-                  required 
-                  className="form-control" 
-                  value={form.produto_id} 
-                  onChange={e => setForm({...form, produto_id: e.target.value})}
-                >
-                  <option value="" disabled>Selecione um produto</option>
+            <h3 style={{ marginBottom: '1.5rem', fontSize: '1.5rem', fontWeight: '700' }}>Registrar Movimentação</h3>
+            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Produto</label>
+                <select required className="form-control" value={form.produto_id} onChange={e => setForm({...form, produto_id: e.target.value})}>
+                  <option value="">Selecione um produto</option>
                   {produtos.map(p => (
                     <option key={p.id} value={p.id}>{p.nome} (Estoque: {p.quantidade})</option>
                   ))}
                 </select>
               </div>
-              <div className="form-group" style={{ display: 'flex', gap: '1rem' }}>
+              <div style={{ display: 'flex', gap: '1rem' }}>
                 <div style={{ flex: 1 }}>
-                  <label className="form-label">Tipo de Movimentação</label>
-                  <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
-                      <input type="radio" name="tipo" value="ENTRADA" checked={form.tipo === 'ENTRADA'} onChange={e => setForm({...form, tipo: e.target.value})} />
-                      Reposição (+ Estoque)
-                    </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
-                      <input type="radio" name="tipo" value="SAIDA" checked={form.tipo === 'SAIDA'} onChange={e => setForm({...form, tipo: e.target.value})} />
-                      Retirada (- Estoque)
-                    </label>
-                  </div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Tipo</label>
+                  <select className="form-control" value={form.tipo} onChange={e => setForm({...form, tipo: e.target.value})}>
+                    <option>Saída</option>
+                    <option>Entrada</option>
+                  </select>
                 </div>
                 <div style={{ flex: 1 }}>
-                  <label className="form-label">Quantidade</label>
-                  <input required type="number" min="1" className="form-control" value={form.quantidade} onChange={e => setForm({...form, quantidade: parseInt(e.target.value)})} />
+                  <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Quantidade</label>
+                  <input required type="number" min="1" className="form-control" value={form.quantidade} onChange={e => setForm({...form, quantidade: Number(e.target.value)})} />
                 </div>
               </div>
-
-              {form.tipo === 'SAIDA' && (
-                <div className="form-group" style={{ marginTop: '1rem' }}>
-                  <label className="form-label">Nome do Responsável / Barraca</label>
-                  <input 
-                    required 
-                    className="form-control" 
-                    value={form.responsavel} 
-                    onChange={e => setForm({...form, responsavel: e.target.value})} 
-                    placeholder="Ex: Barraca do Pastel, João, etc."
-                  />
-                </div>
-              )}
-
-              {form.tipo === 'ENTRADA' && (
-                <div className="form-group" style={{ marginTop: '1rem' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', marginBottom: '0.5rem' }}>
-                    <input type="checkbox" checked={form.isDoacao} onChange={e => setForm({...form, isDoacao: e.target.checked})} />
-                    Este item foi recebido como Doação
-                  </label>
-                  {form.isDoacao && (
-                    <input 
-                      required 
-                      className="form-control" 
-                      value={form.doador} 
-                      onChange={e => setForm({...form, doador: e.target.value})} 
-                      placeholder="Nome do Doador ou Patrocinador"
-                    />
-                  )}
-                </div>
-              )}
-              
-              <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
-                <button type="button" className="btn" style={{ flex: 1, backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'white' }} onClick={() => setShowModal(false)}>Cancelar</button>
-                <button type="submit" className={`btn ${form.tipo === 'ENTRADA' ? 'btn-success' : 'btn-danger'}`} style={{ flex: 1, padding: '1rem', fontSize: '1.1rem' }}>
-                  Confirmar {form.tipo === 'ENTRADA' ? 'Reposição' : 'Retirada'}
-                </button>
+              <div>
+                <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Responsável (ou Doador/Barraca)</label>
+                <input required type="text" className="form-control" placeholder="Ex: Barraca do Pastel" value={form.responsavel} onChange={e => setForm({...form, responsavel: e.target.value})} />
+              </div>
+              <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
+                <button type="button" className="btn" onClick={() => setShowModal(false)} style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.1)', color: 'white' }}>Cancelar</button>
+                <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>Confirmar</button>
               </div>
             </form>
           </div>

@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { MessageCircle, X, Send, KeyRound } from 'lucide-react';
-import axios from 'axios';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import { collection, getDocs, addDoc, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 
 export default function AiChat() {
   const [isOpen, setIsOpen] = useState(false);
@@ -30,33 +32,71 @@ export default function AiChat() {
     setLoading(true);
 
     try {
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+      // Busca dados do firebase
+      const prodSnap = await getDocs(collection(db, 'produtos'));
+      const movSnap = await getDocs(collection(db, 'movimentacoes'));
+      const produtos = prodSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const movimentacoes = movSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      const systemPrompt = `Você é um assistente de almoxarifado de uma quermesse. 
+Aqui estão os produtos em estoque: ${JSON.stringify(produtos)}.
+Aqui estão as últimas movimentações: ${JSON.stringify(movimentacoes)}.
+Se o usuário pedir para registrar uma saída ou entrada de algo, responda EXATAMENTE com um JSON neste formato: {"action": "registrar", "tipo": "Saída", "produto_id": "id-do-produto", "quantidade": 1, "responsavel": "nome"}
+Se for apenas uma pergunta, responda normalmente ajudando o usuário.`;
+
       const historyForApi = messages.map(m => ({
         role: m.role === 'ai' ? 'model' : 'user',
         parts: [{ text: m.text }]
       }));
 
-      const res = await axios.post(`http://${window.location.hostname}:3001/api/chat`, {
-        message: userMsg,
-        apiKey: apiKey,
-        chatHistory: historyForApi
+      const chat = model.startChat({
+        history: [{ role: "user", parts: [{ text: systemPrompt }] }, { role: "model", parts: [{ text: "Entendido." }] }, ...historyForApi]
       });
 
-      setMessages(prev => [...prev, { role: 'ai', text: res.data.text }]);
-      
-      if (res.data.action) {
-        // Se a IA disparou uma ação no banco, avisa o sistema e dá reload
-        setTimeout(() => {
-           window.location.reload();
-        }, 2000);
+      const result = await chat.sendMessage(userMsg);
+      const responseText = result.response.text();
+
+      // Check if it's a JSON action
+      try {
+        const jsonMatch = responseText.match(/\{.*\}/s);
+        if (jsonMatch) {
+          const actionData = JSON.parse(jsonMatch[0]);
+          if (actionData.action === "registrar") {
+            // Firebase Action
+            await addDoc(collection(db, 'movimentacoes'), {
+              produto_id: actionData.produto_id,
+              tipo: actionData.tipo,
+              quantidade: actionData.quantidade,
+              responsavel: actionData.responsavel || 'IA Assistente',
+              data_hora: new Date().toISOString()
+            });
+
+            const prodRef = doc(db, 'produtos', actionData.produto_id);
+            const prodSnapData = await getDoc(prodRef);
+            if (prodSnapData.exists()) {
+              const prodData: any = prodSnapData.data();
+              let novaQtd = prodData.quantidade || 0;
+              if (actionData.tipo === 'Entrada') novaQtd += actionData.quantidade;
+              if (actionData.tipo === 'Saída') novaQtd -= actionData.quantidade;
+              await updateDoc(prodRef, { quantidade: novaQtd });
+            }
+
+            setMessages(prev => [...prev, { role: 'ai', text: `✅ Sucesso! Registrei a ${actionData.tipo} de ${actionData.quantidade} unidade(s) para ${actionData.responsavel}. O estoque foi atualizado!` }]);
+            return;
+          }
+        }
+      } catch (e) {
+        // Not JSON, just normal text
       }
 
+      setMessages(prev => [...prev, { role: 'ai', text: responseText }]);
+
     } catch (err: any) {
-      const errorMsg = err.response?.data?.error || 'Erro ao falar com a IA.';
-      setMessages(prev => [...prev, { role: 'ai', text: `❌ ${errorMsg}` }]);
-      if (errorMsg.includes('Chave')) {
-        setApiKey(''); // Reseta a chave se for inválida
-        localStorage.removeItem('gemini_api_key');
-      }
+      console.error(err);
+      setMessages(prev => [...prev, { role: 'ai', text: `❌ Erro ao falar com a IA: ${err.message}` }]);
     } finally {
       setLoading(false);
     }

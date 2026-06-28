@@ -1,156 +1,139 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
-import { Package, TrendingUp, TrendingDown, AlertTriangle, Users, PieChart as PieIcon } from 'lucide-react';
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-
-const COLORS = ['#f97316', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899'];
+import { collection, onSnapshot } from 'firebase/firestore';
+import { db } from '../firebase';
+import { Package, AlertTriangle, ArrowDownCircle, PieChart } from 'lucide-react';
 
 export default function Dashboard() {
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<any>({
+    totalProdutos: 0,
+    estoqueCritico: [],
+    ultimasRetiradas: [],
+    categorias: []
+  });
 
   useEffect(() => {
-    // Usando Node.js fallback, pois Python pode não estar instalado no seu sistema.
-    // Para usar o Python mude a porta de 3001 para 8000 e altere a URL para /api/analytics/dashboard
-    axios.get(`http://${window.location.hostname}:3001/api/dashboard`)
-      .then(res => {
-        setData(res.data);
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error('Erro ao carregar dashboard', err);
-        setLoading(false);
+    let prods: any[] = [];
+    let movs: any[] = [];
+
+    const calculateDashboard = () => {
+      const criticos = prods.filter(p => p.quantidade <= p.estoque_minimo);
+      const ultimas = movs.filter(m => m.tipo === 'Saída').sort((a,b) => new Date(b.data_hora).getTime() - new Date(a.data_hora).getTime()).slice(0, 5);
+      
+      const catsMap: any = {};
+      prods.forEach(p => {
+        catsMap[p.categoria] = (catsMap[p.categoria] || 0) + 1;
       });
+      const categorias = Object.keys(catsMap).map(k => ({ categoria: k, count: catsMap[k] }));
+
+      setData({
+        totalProdutos: prods.length,
+        estoqueCritico: criticos,
+        ultimasRetiradas: ultimas,
+        categorias
+      });
+    };
+
+    const unsubP = onSnapshot(collection(db, 'produtos'), (snap) => {
+      prods = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      calculateDashboard();
+    });
+
+    const unsubM = onSnapshot(collection(db, 'movimentacoes'), (snap) => {
+      movs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      calculateDashboard();
+    });
+
+    return () => { unsubP(); unsubM(); };
   }, []);
 
-  if (loading) return <div className="page-title">Carregando dados da Dashboard...</div>;
-  if (!data) return <div className="page-title">Erro ao conectar com a API.</div>;
-
   return (
-    <div>
+    <div className="main-content slide-up">
       <div className="page-header">
-        <h2 className="page-title">Visão Geral do CRM</h2>
+        <div>
+          <h2 className="page-title">Visão Geral</h2>
+          <p style={{ color: 'var(--text-secondary)' }}>Acompanhe o ritmo da Quermesse em tempo real</p>
+        </div>
       </div>
 
       <div className="dashboard-grid">
-        <div className="stat-card">
-          <Package className="stat-icon" size={24} />
-          <span className="stat-title">Total de Itens no Estoque</span>
-          <span className="stat-value">{data.total_produtos_ativos} un.</span>
+        <div className="card stat-card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div>
+              <p style={{ color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>Total de Produtos</p>
+              <h3 style={{ fontSize: '2rem', margin: 0 }}>{data.totalProdutos}</h3>
+            </div>
+            <div style={{ background: 'rgba(249, 115, 22, 0.2)', padding: '1rem', borderRadius: '12px', color: 'var(--accent-color)' }}>
+              <Package size={24} />
+            </div>
+          </div>
         </div>
 
-        <div className="stat-card">
-          <TrendingDown className="stat-icon" size={24} style={{ color: 'var(--danger)' }} />
-          <span className="stat-title">Retiradas Totais</span>
-          <span className="stat-value">{data.movimentacoes.saidas} un.</span>
+        <div className="card stat-card" style={{ borderColor: data.estoqueCritico.length > 0 ? 'rgba(239, 68, 68, 0.5)' : 'var(--glass-border)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div>
+              <p style={{ color: '#ef4444', marginBottom: '0.5rem', fontWeight: 600 }}>Avisos de Estoque</p>
+              <h3 style={{ fontSize: '2rem', margin: 0 }}>{data.estoqueCritico.length}</h3>
+            </div>
+            <div style={{ background: 'rgba(239, 68, 68, 0.2)', padding: '1rem', borderRadius: '12px', color: '#ef4444' }}>
+              <AlertTriangle size={24} />
+            </div>
+          </div>
         </div>
 
-        <div className="stat-card">
-          <TrendingUp className="stat-icon" size={24} style={{ color: 'var(--success)' }} />
-          <span className="stat-title">Reposições Totais</span>
-          <span className="stat-value">{data.movimentacoes.entradas} un.</span>
+        <div className="card stat-card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div>
+              <p style={{ color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>Categorias Ativas</p>
+              <h3 style={{ fontSize: '2rem', margin: 0 }}>{data.categorias.length}</h3>
+            </div>
+            <div style={{ background: 'rgba(252, 211, 77, 0.2)', padding: '1rem', borderRadius: '12px', color: '#fcd34d' }}>
+              <PieChart size={24} />
+            </div>
+          </div>
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem', marginTop: '2rem' }}>
-        <div className="table-container">
-          <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <AlertTriangle color="var(--danger)" size={20} />
-            <h3 style={{ fontSize: '1.25rem' }}>Alerta: Estoque Crítico</h3>
-          </div>
-          {data.alertas_estoque.length === 0 ? (
-            <div style={{ padding: '1rem', color: 'var(--success)' }}>Tudo certo! Nenhum produto atingiu o estoque mínimo.</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '1.5rem', marginTop: '1.5rem' }}>
+        <div className="card">
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}>
+            <ArrowDownCircle size={20} color="var(--accent-color)" /> Últimas Retiradas
+          </h3>
+          {data.ultimasRetiradas.length === 0 ? (
+            <p style={{ color: 'var(--text-secondary)' }}>Nenhuma retirada registrada ainda.</p>
           ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th>Produto</th>
-                  <th>Qtd Atual</th>
-                  <th>Mínimo Permitido</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.alertas_estoque.map((item: any, index: number) => (
-                  <tr key={index}>
-                    <td style={{ fontWeight: 'bold' }}>{item.nome}</td>
-                    <td style={{ color: 'var(--danger)', fontWeight: 'bold' }}>{item.quantidade} un.</td>
-                    <td style={{ color: 'var(--text-secondary)' }}>{item.estoque_minimo} un.</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {data.ultimasRetiradas.map((r: any) => (
+                <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', background: 'rgba(255,255,255,0.05)', borderRadius: '12px' }}>
+                  <div>
+                    <p style={{ fontWeight: 600, margin: '0 0 0.25rem 0' }}>{r.responsavel}</p>
+                    <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: 0 }}>ID Produto: {r.produto_id.slice(0,6)}...</p>
+                  </div>
+                  <span style={{ fontWeight: 800, color: '#ef4444', fontSize: '1.2rem' }}>-{r.quantidade}</span>
+                </div>
+              ))}
+            </div>
           )}
         </div>
 
-        <div className="table-container">
-          <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Users color="var(--accent-color)" size={20} />
-            <h3 style={{ fontSize: '1.25rem' }}>Últimas Retiradas</h3>
-          </div>
-          {data.saidas_recentes.length === 0 ? (
-            <div style={{ padding: '1rem', color: 'var(--text-secondary)' }}>Nenhuma retirada recente.</div>
-          ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th>Responsável</th>
-                  <th>Produto</th>
-                  <th>Qtd</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.saidas_recentes.map((item: any, index: number) => (
-                  <tr key={index}>
-                    <td style={{ fontWeight: 'bold' }}>{item.responsavel || '-'}</td>
-                    <td>{item.nome}</td>
-                    <td><span className="badge badge-saida">{item.quantidade} un.</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
-
-      <div className="table-container" style={{ marginTop: '2rem', padding: '1.5rem' }}>
-        <div style={{ paddingBottom: '1rem', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-          <PieIcon color="var(--accent-color)" size={20} />
-          <h3 style={{ fontSize: '1.25rem' }}>Distribuição do Estoque por Categoria</h3>
-        </div>
-        
-        {data.categorias_chart && data.categorias_chart.length > 0 ? (
-          <div style={{ height: '300px', width: '100%' }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={data.categorias_chart}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={100}
-                  paddingAngle={5}
-                  dataKey="total"
-                  nameKey="categoria"
-                >
-                  {data.categorias_chart.map((entry: any, index: number) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip 
-                  contentStyle={{ backgroundColor: 'var(--bg-panel)', borderColor: 'var(--border-color)', borderRadius: '8px' }}
-                  itemStyle={{ color: 'var(--text-primary)' }}
-                />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        ) : (
-          <div style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '2rem' }}>
-            Nenhum dado de categoria disponível ainda.
+        {data.estoqueCritico.length > 0 && (
+          <div className="card" style={{ border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+            <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem', color: '#ef4444' }}>
+              <AlertTriangle size={20} /> Precisam de Reposição
+            </h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {data.estoqueCritico.map((c: any) => (
+                <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '12px' }}>
+                  <div>
+                    <p style={{ fontWeight: 600, margin: '0 0 0.25rem 0' }}>{c.nome}</p>
+                    <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: 0 }}>Mínimo: {c.estoque_minimo}</p>
+                  </div>
+                  <span style={{ fontWeight: 800, color: '#ef4444', fontSize: '1.2rem' }}>{c.quantidade} un.</span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
-
     </div>
   );
 }

@@ -1,48 +1,51 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 import { Plus } from 'lucide-react';
 import QrCodeScanner from '../components/QrCodeScanner';
 
 export default function Produtos() {
   const [produtos, setProdutos] = useState<any[]>([]);
-  const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ nome: '', descricao: '', categoria: 'Bebidas', estoque_minimo: 10, quantidade: 0 });
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategoria, setFilterCategoria] = useState('Todas');
-
-  const fetchProdutos = () => {
-    axios.get(`http://${window.location.hostname}:3001/api/produtos`)
-      .then(res => setProdutos(res.data))
-      .catch(console.error);
-  };
+  
+  const [showModal, setShowModal] = useState(false);
+  const [form, setForm] = useState({ nome: '', descricao: '', categoria: 'Bebidas', estoque_minimo: 10, quantidade: 0 });
 
   useEffect(() => {
-    fetchProdutos();
+    const unsub = onSnapshot(collection(db, 'produtos'), (snapshot) => {
+      const prods = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setProdutos(prods);
+    });
+    return () => unsub();
   }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    axios.post(`http://${window.location.hostname}:3001/api/produtos`, form)
-      .then(() => {
-        fetchProdutos();
-        setShowModal(false);
-        setForm({ nome: '', descricao: '', categoria: 'Bebidas', estoque_minimo: 10, quantidade: 0 });
-      })
-      .catch(console.error);
+    try {
+      await addDoc(collection(db, 'produtos'), form);
+      setShowModal(false);
+      setForm({ nome: '', descricao: '', categoria: 'Bebidas', estoque_minimo: 10, quantidade: 0 });
+    } catch (err) {
+      console.error(err);
+    }
   };
 
-  const produtosFiltrados = produtos.filter(p => {
-    const matchesSearch = p.nome.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategoria = filterCategoria === 'Todas' || p.categoria === filterCategoria;
-    return matchesSearch && matchesCategoria;
+  const filtered = produtos.filter(p => {
+    const matchName = p.nome?.toLowerCase().includes(searchTerm.toLowerCase()) || p.id === searchTerm;
+    const matchCat = filterCategoria === 'Todas' || p.categoria === filterCategoria;
+    return matchName && matchCat;
   });
 
   return (
-    <div>
+    <div className="main-content slide-up">
       <div className="page-header">
-        <h2 className="page-title">Catálogo de Produtos</h2>
+        <div>
+          <h2 className="page-title">Gestão de Produtos</h2>
+          <p style={{ color: 'var(--text-secondary)' }}>Cadastre e gerencie os itens da quermesse</p>
+        </div>
         <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-          <Plus size={18} /> Novo Produto
+          <Plus size={20} /> Novo Produto
         </button>
       </div>
 
@@ -51,7 +54,7 @@ export default function Produtos() {
         <input 
           type="text" 
           className="form-control" 
-          placeholder="Buscar produto por nome ou código..." 
+          placeholder="Buscar produto por nome ou ID..." 
           value={searchTerm} 
           onChange={e => setSearchTerm(e.target.value)}
           style={{ flex: 2 }}
@@ -65,9 +68,8 @@ export default function Produtos() {
           <option value="Todas">Todas as Categorias</option>
           <option value="Bebidas">Bebidas</option>
           <option value="Comidas">Comidas</option>
-          <option value="Descartáveis">Descartáveis</option>
-          <option value="Limpeza">Limpeza</option>
-          <option value="Outros">Outros</option>
+          <option value="Doces">Doces</option>
+          <option value="Diversos">Diversos</option>
         </select>
       </div>
 
@@ -75,37 +77,34 @@ export default function Produtos() {
         <table>
           <thead>
             <tr>
-              <th>ID</th>
+              <th>ID (QR Code)</th>
               <th>Nome</th>
               <th>Categoria</th>
-              <th>Descrição</th>
-              <th>Estoque / Min</th>
+              <th>Estoque Atual</th>
+              <th>Mínimo</th>
+              <th>Ações</th>
             </tr>
           </thead>
           <tbody>
-            {produtosFiltrados.map(p => (
+            {filtered.map(p => (
               <tr key={p.id}>
-                <td>{p.id}</td>
-                <td style={{ fontWeight: '600' }}>{p.nome}</td>
+                <td style={{ color: 'var(--text-secondary)' }}>{p.id.slice(0,6)}...</td>
+                <td style={{ fontWeight: 500, color: 'white' }}>{p.nome}</td>
+                <td><span className="badge" style={{ backgroundColor: 'rgba(252, 211, 77, 0.2)', color: '#fcd34d' }}>{p.categoria}</span></td>
                 <td>
-                  <span className="badge" style={{ backgroundColor: 'var(--border-color)' }}>{p.categoria}</span>
-                </td>
-                <td>{p.descricao}</td>
-                <td>
-                  <span style={{ fontWeight: 'bold', color: p.quantidade <= p.estoque_minimo ? 'var(--danger)' : 'var(--success)' }}>
+                  <span style={{ 
+                    color: p.quantidade <= p.estoque_minimo ? '#ef4444' : '#22c55e',
+                    fontWeight: 600 
+                  }}>
                     {p.quantidade} un.
                   </span>
-                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginLeft: '0.5rem' }}>
-                    (Min: {p.estoque_minimo})
-                  </span>
+                </td>
+                <td style={{ color: 'var(--text-secondary)' }}>{p.estoque_minimo}</td>
+                <td>
+                  <button className="btn" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Editar</button>
                 </td>
               </tr>
             ))}
-            {produtosFiltrados.length === 0 && (
-              <tr>
-                <td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>Nenhum produto encontrado.</td>
-              </tr>
-            )}
           </tbody>
         </table>
       </div>
@@ -113,41 +112,34 @@ export default function Produtos() {
       {showModal && (
         <div className="modal-overlay">
           <div className="modal-content">
-            <h3 style={{ marginBottom: '1.5rem', fontSize: '1.5rem', fontWeight: '700' }}>Cadastrar Novo Produto</h3>
-            <form onSubmit={handleSubmit}>
-              <div className="form-group">
-                <label className="form-label">Nome do Produto</label>
-                <input required className="form-control" value={form.nome} onChange={e => setForm({...form, nome: e.target.value})} placeholder="Ex: Refrigerante Lata" />
+            <h3 style={{ marginBottom: '1.5rem', fontSize: '1.5rem', fontWeight: '700' }}>Adicionar Produto</h3>
+            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Nome do Produto</label>
+                <input required type="text" className="form-control" value={form.nome} onChange={e => setForm({...form, nome: e.target.value})} />
               </div>
-              <div className="form-group" style={{ display: 'flex', gap: '1rem' }}>
+              <div style={{ display: 'flex', gap: '1rem' }}>
                 <div style={{ flex: 1 }}>
-                  <label className="form-label">Categoria</label>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Categoria</label>
                   <select className="form-control" value={form.categoria} onChange={e => setForm({...form, categoria: e.target.value})}>
                     <option>Bebidas</option>
                     <option>Comidas</option>
-                    <option>Descartáveis</option>
-                    <option>Limpeza</option>
-                    <option>Outros</option>
+                    <option>Doces</option>
+                    <option>Diversos</option>
                   </select>
                 </div>
                 <div style={{ flex: 1 }}>
-                  <label className="form-label">Estoque Mínimo p/ Alerta</label>
-                  <input required type="number" className="form-control" value={form.estoque_minimo} onChange={e => setForm({...form, estoque_minimo: parseInt(e.target.value)})} />
+                  <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Estoque Inicial</label>
+                  <input required type="number" className="form-control" value={form.quantidade} onChange={e => setForm({...form, quantidade: Number(e.target.value)})} />
                 </div>
               </div>
-              <div className="form-group" style={{ display: 'flex', gap: '1rem' }}>
-                <div style={{ flex: 2 }}>
-                  <label className="form-label">Descrição (Opcional)</label>
-                  <input className="form-control" value={form.descricao} onChange={e => setForm({...form, descricao: e.target.value})} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label className="form-label">Estoque Inicial</label>
-                  <input required type="number" className="form-control" value={form.quantidade} onChange={e => setForm({...form, quantidade: parseInt(e.target.value)})} />
-                </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Estoque Mínimo (Alerta)</label>
+                <input required type="number" className="form-control" value={form.estoque_minimo} onChange={e => setForm({...form, estoque_minimo: Number(e.target.value)})} />
               </div>
-              <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
-                <button type="button" className="btn" style={{ flex: 1, backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'white' }} onClick={() => setShowModal(false)}>Cancelar</button>
-                <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>Salvar</button>
+              <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
+                <button type="button" className="btn" onClick={() => setShowModal(false)} style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.1)', color: 'white' }}>Cancelar</button>
+                <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>Salvar Produto</button>
               </div>
             </form>
           </div>
