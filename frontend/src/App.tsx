@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { LayoutDashboard, Package, ArrowRightLeft } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import Produtos from './pages/Produtos';
