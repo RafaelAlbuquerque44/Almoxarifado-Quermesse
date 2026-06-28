@@ -1,17 +1,25 @@
+import { useState } from 'react';
 import { HashRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Package, ArrowRightLeft } from 'lucide-react';
+import { LayoutDashboard, Package, ArrowRightLeft, Menu, X } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import Produtos from './pages/Produtos';
 import Movimentacoes from './pages/Movimentacoes';
 import AiChat from './components/AiChat';
 import MobileAccess from './components/MobileAccess';
 
-function Sidebar() {
+function Sidebar({ isOpen, setIsOpen }: { isOpen: boolean, setIsOpen: (v: boolean) => void }) {
   const location = useLocation();
   
   return (
-    <div className="sidebar">
-      <h1>Almoxarifado Quermesse</h1>
+    <>
+      <div className={`sidebar-overlay ${isOpen ? 'show' : ''}`} onClick={() => setIsOpen(false)}></div>
+      <div className={`sidebar ${isOpen ? 'open' : ''}`}>
+        <div className="sidebar-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+          <h1 style={{ margin: 0, fontSize: '1.6rem' }}>Almoxarifado</h1>
+          <button className="mobile-close-btn" onClick={() => setIsOpen(false)} style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer' }}>
+            <X size={24} />
+          </button>
+        </div>
       <nav className="nav-container">
         <Link to="/" className={`nav-link ${location.pathname === '/' ? 'active' : ''}`}>
           <LayoutDashboard size={20} />
@@ -27,15 +35,24 @@ function Sidebar() {
         </Link>
       </nav>
       <MobileAccess />
-    </div>
+      </div>
+    </>
   );
 }
 
 function App() {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   return (
     <Router>
       <div className="app-container">
-        <Sidebar />
+        <div className="mobile-top-bar">
+          <button onClick={() => setSidebarOpen(true)} style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer' }}>
+            <Menu size={28} />
+          </button>
+          <h2 style={{ fontSize: '1.2rem', margin: 0 }}>Almoxarifado</h2>
+        </div>
+        <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
         <main className="main-content">
           <Routes>
             <Route path="/" element={<Dashboard />} />
