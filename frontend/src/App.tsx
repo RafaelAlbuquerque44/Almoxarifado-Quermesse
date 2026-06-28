@@ -4,7 +4,7 @@ import { LayoutDashboard, Package, ArrowRightLeft, Menu, X } from 'lucide-react'
 import Dashboard from './pages/Dashboard';
 import Produtos from './pages/Produtos';
 import Movimentacoes from './pages/Movimentacoes';
-import AiChat from './components/AiChat';
+
 import MobileAccess from './components/MobileAccess';
 
 function Sidebar({ isOpen, setIsOpen }: { isOpen: boolean, setIsOpen: (v: boolean) => void }) {
@@ -60,7 +60,6 @@ function App() {
             <Route path="/movimentacoes" element={<Movimentacoes />} />
           </Routes>
         </main>
-        <AiChat />
       </div>
     </Router>
   );
