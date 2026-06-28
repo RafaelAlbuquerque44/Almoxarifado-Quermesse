@@ -390,8 +390,8 @@ tr:hover td {
   to { opacity: 1; transform: scale(1); }
 }
 
-/* RESPONSIVIDADE MOBILE */
-@media (max-width: 768px) {
+/* RESPONSIVIDADE MOBILE E PAINÉIS LATERAIS */
+@media (max-width: 1024px) {
   .app-container {
     flex-direction: column;
   }
