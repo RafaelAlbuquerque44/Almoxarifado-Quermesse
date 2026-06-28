@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { collection, onSnapshot, addDoc, doc, updateDoc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { ArrowRightLeft, Download } from 'lucide-react';
+import { ArrowRightLeft } from 'lucide-react';
 import QrCodeScanner from '../components/QrCodeScanner';
 
 export default function Movimentacoes() {
