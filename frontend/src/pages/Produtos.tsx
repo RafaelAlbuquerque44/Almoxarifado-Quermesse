@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { collection, onSnapshot, addDoc } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Plus } from 'lucide-react';
+import { Plus, Edit2, Trash2 } from 'lucide-react';
 import QrCodeScanner from '../components/QrCodeScanner';
 
 export default function Produtos() {
@@ -10,6 +10,7 @@ export default function Produtos() {
   const [filterCategoria, setFilterCategoria] = useState('Todas');
   
   const [showModal, setShowModal] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ nome: '', descricao: '', categoria: 'Bebidas', estoque_minimo: 10, quantidade: 0 });
 
   useEffect(() => {
@@ -23,12 +24,39 @@ export default function Produtos() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await addDoc(collection(db, 'produtos'), form);
+      if (editingId) {
+        await updateDoc(doc(db, 'produtos', editingId), form);
+      } else {
+        await addDoc(collection(db, 'produtos'), form);
+      }
       setShowModal(false);
+      setEditingId(null);
       setForm({ nome: '', descricao: '', categoria: 'Bebidas', estoque_minimo: 10, quantidade: 0 });
     } catch (err) {
       console.error(err);
     }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (window.confirm('Tem certeza que deseja excluir este produto?')) {
+      try {
+        await deleteDoc(doc(db, 'produtos', id));
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  };
+
+  const openEdit = (prod: any) => {
+    setForm({ nome: prod.nome, descricao: prod.descricao || '', categoria: prod.categoria, estoque_minimo: prod.estoque_minimo, quantidade: prod.quantidade });
+    setEditingId(prod.id);
+    setShowModal(true);
+  };
+
+  const openNew = () => {
+    setEditingId(null);
+    setForm({ nome: '', descricao: '', categoria: 'Bebidas', estoque_minimo: 10, quantidade: 0 });
+    setShowModal(true);
   };
 
   const filtered = produtos.filter(p => {
@@ -44,7 +72,7 @@ export default function Produtos() {
           <h2 className="page-title">Gestão de Produtos</h2>
           <p style={{ color: 'var(--text-secondary)' }}>Cadastre e gerencie os itens da quermesse</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+        <button className="btn btn-primary" onClick={openNew}>
           <Plus size={20} /> Novo Produto
         </button>
       </div>
@@ -101,7 +129,14 @@ export default function Produtos() {
                 </td>
                 <td style={{ color: 'var(--text-secondary)' }}>{p.estoque_minimo}</td>
                 <td>
-                  <button className="btn" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Editar</button>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button className="btn" style={{ padding: '0.4rem', backgroundColor: 'rgba(255,255,255,0.1)' }} onClick={() => openEdit(p)} title="Editar">
+                      <Edit2 size={16} />
+                    </button>
+                    <button className="btn" style={{ padding: '0.4rem', backgroundColor: 'rgba(239, 68, 68, 0.2)', color: '#ef4444' }} onClick={() => handleDelete(p.id)} title="Excluir">
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -112,7 +147,7 @@ export default function Produtos() {
       {showModal && (
         <div className="modal-overlay">
           <div className="modal-content">
-            <h3 style={{ marginBottom: '1.5rem', fontSize: '1.5rem', fontWeight: '700' }}>Adicionar Produto</h3>
+            <h3 style={{ marginBottom: '1.5rem', fontSize: '1.5rem', fontWeight: '700' }}>{editingId ? 'Editar Produto' : 'Adicionar Produto'}</h3>
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div>
                 <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Nome do Produto</label>
@@ -139,7 +174,7 @@ export default function Produtos() {
               </div>
               <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
                 <button type="button" className="btn" onClick={() => setShowModal(false)} style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.1)', color: 'white' }}>Cancelar</button>
-                <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>Salvar Produto</button>
+                <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>{editingId ? 'Salvar Alterações' : 'Salvar Produto'}</button>
               </div>
             </form>
           </div>
