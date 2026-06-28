@@ -33,7 +33,7 @@ export default function AiChat() {
 
     try {
       const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+      const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
       // Busca dados do firebase
       const prodSnap = await getDocs(collection(db, 'produtos'));
@@ -62,17 +62,8 @@ Se for apenas uma pergunta, responda normalmente ajudando o usuário.`;
         result = await chat.sendMessage(userMsg);
         responseText = result.response.text();
       } catch (err: any) {
-        if (err.message.includes('404')) {
-          console.warn("gemini-1.5-flash-latest falhou, tentando gemini-pro...");
-          const fallbackModel = genAI.getGenerativeModel({ model: "gemini-pro" });
-          const fallbackChat = fallbackModel.startChat({
-            history: [{ role: "user", parts: [{ text: systemPrompt }] }, { role: "model", parts: [{ text: "Entendido." }] }, ...historyForApi]
-          });
-          result = await fallbackChat.sendMessage(userMsg);
-          responseText = result.response.text();
-        } else {
-          throw err;
-        }
+        console.error("Erro no Gemini:", err);
+        throw err;
       }
 
       // Check if it's a JSON action
