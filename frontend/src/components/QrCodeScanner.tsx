@@ -1,19 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { X, QrCode } from 'lucide-react';
 
 export default function QrCodeScanner() {
   const [isOpen, setIsOpen] = useState(false);
-  const [localIp, setLocalIp] = useState('');
 
-  useEffect(() => {
-    fetch(`http://${window.location.hostname}:3001/api/ip`)
-      .then(res => res.json())
-      .then(data => setLocalIp(data.ip))
-      .catch(() => setLocalIp(window.location.hostname));
-  }, []);
-
-  const accessUrl = `http://${localIp || window.location.hostname}:5173/`;
+  // URL do GitHub Pages (ou local se estiver rodando em dev)
+  const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  const accessUrl = isLocalhost ? `http://${window.location.hostname}:5173/` : window.location.href;
 
   return (
     <>
@@ -41,7 +35,7 @@ export default function QrCodeScanner() {
             </div>
             
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '0.5rem' }}>
-              Abra a câmera do seu celular, aponte para este código e acesse o sistema pela mesma rede Wi-Fi!
+              Abra a câmera do seu celular, aponte para este código e acesse o sistema de onde estiver!
             </p>
             <small style={{ color: 'var(--accent-color)' }}>{accessUrl}</small>
           </div>
